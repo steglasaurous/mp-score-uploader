@@ -1,14 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Text;
-using System.Threading.Tasks;
 using MelonLoader;
-using Photon.Realtime;
 using Synth.Utils;
 using UnityEngine.Events;
 using Newtonsoft.Json;
+using Photon.Pun;
 
 namespace MPScoreUploader
 {
@@ -24,7 +22,7 @@ namespace MPScoreUploader
 
         private static GameControlManager gameControlManager;
 
-        public override void OnInitializeMelon()
+        public override void OnApplicationStart()
         {
             Instance = this;
             RuntimePatch.PatchAll();
@@ -131,7 +129,8 @@ namespace MPScoreUploader
 
                     string jsonContent = JsonConvert.SerializeObject(new 
                         {
-                            submitterName = "steglasaurous", // FIXME: Replace with actual user submitting - can I find this somewhere?
+                            submitterName = PhotonNetwork.LocalPlayer.NickName,
+                            roomName = PhotonNetwork.CurrentRoom.Name,
                             map = mapInfo,
                             scores = scores
                         }
