@@ -7,6 +7,7 @@ using Synth.Utils;
 using UnityEngine.Events;
 using Newtonsoft.Json;
 using Photon.Pun;
+using System.Threading.Tasks;
 
 namespace MPScoreUploader
 {
@@ -22,28 +23,27 @@ namespace MPScoreUploader
 
         private static GameControlManager gameControlManager;
 
+        private MelonPreferences_Category prefs;
+        private MelonPreferences_Entry<string> baseUrl;
+
+
         public override void OnApplicationStart()
         {
+            prefs = MelonPreferences.CreateCategory("MPScoreUploader");
+
+            baseUrl = prefs.CreateEntry<string>("baseUrl", "https://steglasaurous.com:3000");
+            baseUrl.Comment = "The URL to submit scores to.";
+
+            // FIXME: Eventually add an API Key or something that would not just let anyone submit whatever they want. 
+
             Instance = this;
             RuntimePatch.PatchAll();
 
             sharedClient = new HttpClient();
-            sharedClient.BaseAddress = new Uri("http://localhost:3000"); // FIXME: Change to a configuration var
+            sharedClient.BaseAddress = new Uri(baseUrl.Value);
 
-            // Do anything?  Sanity check that we can submit?  Open a browser to login as needed? 
-            try
-            {
-                StageEvents stageEvents = new StageEvents();
-                stageEvents.OnSongStart = new UnityEvent();
-                stageEvents.OnSongStart.AddListener(OnSongStart);
-                GameControlManager.UpdateStageEventList(stageEvents);
-
-            } catch (Exception e)
-            {
-                LoggerInstance.Msg(e.Message);
-            }
-
-            MelonLogger.Msg("MPScoreUploader started");
+            // Do anything?  Sanity check that we can submit?  Open a browser to login as needed?
+            MelonLogger.Msg("MPScoreUploader started. Submitting scores to " + baseUrl.Value);
         }
 
         public void GameManagerInit()
@@ -55,10 +55,14 @@ namespace MPScoreUploader
                 StageEvents stageEvents = new StageEvents();
                 stageEvents.OnSongStart = new UnityEvent();
                 stageEvents.OnSongStart.AddListener(OnSongStart);
+                stageEvents.OnCompleteSpecial = new UnityEvent();
+                stageEvents.OnEnterSpecial = new UnityEvent();
+                stageEvents.OnFailSpecial = new UnityEvent();
+                stageEvents.OnNoteFail = new UnityEvent();
+                stageEvents.OnNoteHit = new UnityEvent();
+                stageEvents.OnSongEnd = new UnityEvent();
+                
                 GameControlManager.UpdateStageEventList(stageEvents);
-
-                MelonLogger.Msg("Added OnSongStart stage event");
-
             }
             catch (Exception e)
             {
@@ -71,7 +75,7 @@ namespace MPScoreUploader
             if (Game_InfoProvider.s_instance != null && Game_InfoProvider.s_instance.SessionPlayers != null)
             {
                 bool someoneIsPlaying = false;
-
+                
                 foreach (Synth.Multiplayer.SynthSessionPlayer synthSessionPlayer in Game_InfoProvider.s_instance.SessionPlayers)
                 {
                     if (synthSessionPlayer != null)
@@ -87,7 +91,6 @@ namespace MPScoreUploader
                 {
                     // Setting this right away in case submitting fails - prevents an endless loop of errors
                     this.scoreSubmitted = true;
-                    MelonLogger.Msg("Submitting new scores");
                     var mapInfo = new
                     {
                         title = GameControlManager.s_instance.InfoProvider.TrackName,
@@ -97,14 +100,12 @@ namespace MPScoreUploader
                         totalNotes = GameControlManager.s_instance.InfoProvider.NotesTotal,
                         totalSpecials = GameControlManager.s_instance.InfoProvider.SpecialTotals
                     };
-                    LoggerInstance.Msg("Collected MapInfo");
 
                     List<Object> scores = new List<Object>();
 
                     // FIXME: Continue here - once API is running, setup HTTP request and object to match. 
                     foreach (Synth.Multiplayer.SynthSessionPlayer synthSessionPlayer in Game_InfoProvider.s_instance.SessionPlayers)
                     {
-                        LoggerInstance.Msg("Collecting player info");
                         if (synthSessionPlayer != null)
                         {
                             scores.Add(new
@@ -118,10 +119,6 @@ namespace MPScoreUploader
                                 maxMultiplier = synthSessionPlayer.SessionStats.MaxMultiplier,
                                 specialsHit = synthSessionPlayer.SessionStats.SpecialsComplete,
                             });
-                            LoggerInstance.Msg("Player info collected");
-                        } else
-                        {
-                            LoggerInstance.Msg("Player was null, moving on");
                         }
                     }
 
@@ -144,12 +141,32 @@ namespace MPScoreUploader
                         "application/json"
                     );
                     LoggerInstance.Msg("Converted to JSON - sending to API");
-                    sharedClient.PostAsync("/score-submission", stringContent);
-
-                    MelonLogger.Msg("Scores submitted");
+                    _ = this.SubmitScore(stringContent);
                 }
             }
         }
+
+        private async Task SubmitScore(StringContent content)
+        {
+            try
+            {
+                HttpResponseMessage response = await sharedClient.PostAsync("/score-submission", content);
+                if (response.StatusCode != System.Net.HttpStatusCode.Created)
+                {
+                    MelonLogger.Msg("Error: Submitting scores to API failed: " + response.StatusCode + " " + response.ReasonPhrase);
+                } else
+                {
+                    MelonLogger.Msg("Scores submitted successfully.");
+                }
+            }
+            catch (HttpRequestException e)
+            {
+                MelonLogger.Msg("Error: Submitting scores to API threw an exception: " + e.Message);
+            }
+        }
+
+
+        // FIXME: Replace this with scene change detection to determine when a song starts, so we don't bork the events list when using it with 
 
         private void OnSongStart()
         {
