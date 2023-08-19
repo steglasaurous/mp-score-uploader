@@ -31,7 +31,7 @@ namespace MPScoreUploader
         {
             prefs = MelonPreferences.CreateCategory("MPScoreUploader");
 
-            baseUrl = prefs.CreateEntry<string>("baseUrl", "https://steglasaurous.com:3000");
+            baseUrl = prefs.CreateEntry<string>("baseUrl", "https://scores.steglasaurous.com");
             baseUrl.Comment = "The URL to submit scores to.";
 
             // FIXME: Eventually add an API Key or something that would not just let anyone submit whatever they want. 
